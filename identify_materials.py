@@ -64,7 +64,7 @@ label_colors = np.array(
 
 # Label map
 id2label = {
-    0: "Background",
+    0: "Background/Unclassified",
     1: "Wood/Bamboo",
     2: "Ground tile",
     3: "Brick",
@@ -110,11 +110,81 @@ id2label = {
 }
 
 
+def plot_overlay(image, mask):
+    fig, ax = plt.subplots(figsize=(12, 12))
+
+    # Map semantic mask to RGB
+    h, w = mask.shape
+    color_mask = np.zeros((h, w, 3), dtype=np.uint8)
+    for lbl, color in enumerate(label_colors):
+        color_mask[mask == lbl] = color
+
+    # Overlay
+    image_np = np.array(image.resize((w, h)))
+    overlay = (0.5 * image_np + 0.5 * color_mask).astype(np.uint8)
+
+    # Plot
+    ax.imshow(overlay)
+    ax.axis("off")
+
+    # Legend
+    classes = np.insert(np.unique(mask), 0, 0)
+    legend_handles = [
+        Patch(color=np.array(c) / 255.0, label=id2label[i])
+        for i, c in enumerate(label_colors)
+        if i in classes
+    ]
+    plt.legend(
+        handles=legend_handles,
+        bbox_to_anchor=(1, 1),
+        loc="upper left",
+        fontsize="small",
+        frameon=False,
+    )
+    ax.set_title("Material estimates by BFMS")
+    return fig, ax
+
+
+def plot_side_by_side(image, mask):
+    # Map semantic mask to RGB
+    h, w = mask.shape
+    color_mask = np.zeros((h, w, 3), dtype=np.uint8)
+    for lbl, color in enumerate(label_colors):
+        color_mask[mask == lbl] = color
+
+    fig, axs = plt.subplots(1, 2, figsize=(15, 10))
+    axs[0].imshow(image)
+    axs[1].imshow(color_mask)
+
+    # Legend
+    classes = np.insert(np.unique(mask), 0, 0)
+    legend_handles = [
+        Patch(color=np.array(c) / 255.0, label=id2label[i])
+        for i, c in enumerate(label_colors)
+        if i in classes
+    ]
+    plt.legend(
+        handles=legend_handles,
+        bbox_to_anchor=(1.05, 1),
+        loc="upper left",
+        fontsize="small",
+    )
+
+    for ax in axs:
+        ax.axis("off")
+    fig.tight_layout()
+    return fig, axs
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Run Mask2Former segmentation and save material overlay."
     )
-    parser.add_argument("image_path", type=Path, help="Path to input image")
+    parser.add_argument(
+        "image_path",
+        type=Path,
+        help="Path to input image",
+    )
     parser.add_argument(
         "--model_path",
         type=Path,
@@ -160,42 +230,21 @@ def main():
     pixel_class_probs = torch.einsum("qc,qhw->chw", class_probs, masks_probs)
     semantic_mask = torch.argmax(pixel_class_probs, dim=0).cpu().numpy()
 
-    # Map semantic mask to RGB
-    h, w = semantic_mask.shape
-    color_mask = np.zeros((h, w, 3), dtype=np.uint8)
-    for lbl, color in enumerate(label_colors):
-        color_mask[semantic_mask == lbl] = color
-
-    # Overlay
-    image_np = np.array(image.resize((w, h)))
-    overlay = (0.5 * image_np + 0.5 * color_mask).astype(np.uint8)
-
-    # Plot
-    plt.figure(figsize=(12, 12))
-    plt.imshow(overlay)
-    plt.axis("off")
-
-    # Legend
-    classes = np.unique(semantic_mask)
-    legend_handles = [
-        Patch(color=np.array(c) / 255.0, label=id2label[i])
-        for i, c in enumerate(label_colors)
-        if i in classes
-    ]
-    plt.legend(
-        handles=legend_handles,
-        bbox_to_anchor=(1.05, 1),
-        loc="upper left",
-        fontsize="small",
-    )
-    plt.tight_layout()
-
-    # Output filename
-    output_filename = f"{image_path.stem}_materials.png"
+    # Overlay image
+    fig, ax = plot_overlay(image, semantic_mask)
+    output_filename = f"{image_path.stem}_materials_overlay.png"
     output_path = Path.cwd() / output_filename
-    plt.savefig(output_path)
+    fig.savefig(output_path, bbox_inches="tight")
     print(f"Saved overlay to {output_path}")
+
+    # Side by side image
+    fig, axs = plot_side_by_side(image, semantic_mask)
+    output_filename = f"{image_path.stem}_materials_sidebyside.png"
+    output_path = Path.cwd() / output_filename
+    fig.savefig(output_path, bbox_inches="tight")
+    print(f"Saved side-by-side image to {output_path}")
 
 
 if __name__ == "__main__":
+    plt.rcParams.update({"font.size": 24})
     main()
